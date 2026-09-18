@@ -1,0 +1,115 @@
+plugins {
+    id 'com.android.application' version '7.4.2'
+    id 'org.jetbrains.kotlin.android' version '1.8.22'
+}
+
+android {
+    namespace 'si.safeer.tv'
+    compileSdk 34
+    buildToolsVersion '34.0.0'
+
+    defaultConfig {
+        minSdk 28
+        targetSdk 34
+        versionCode 213
+        versionName '2.1.104'
+    }
+
+    // Dve loceni aplikaciji iz ene kode. Android ju vidi kot dve aplikaciji (svoje ime, ikona,
+    // vnos v zaganjalniku, svoje nastavitve in odstranitev); vzdrzujemo pa en izvorni repozitorij.
+    flavorDimensions 'aplikacija'
+
+    productFlavors {
+        brskalnik {
+            dimension 'aplikacija'
+            applicationId 'si.safeer.tv'
+        }
+        os {
+            dimension 'aplikacija'
+            applicationId 'si.safeer.os'
+            versionCode 4
+            versionName '0.2.4'
+        }
+    }
+
+    sourceSets {
+        brskalnik {
+            manifest.srcFile 'okusi/brskalnik/AndroidManifest.xml'
+        }
+        os {
+            manifest.srcFile 'okusi/os/AndroidManifest.xml'
+        }
+        main {
+            manifest.srcFile 'AndroidManifest.xml'
+            java.srcDirs = ['src/main/kotlin']
+            kotlin.srcDirs = ['src/main/kotlin']
+            res.srcDirs = ['res']
+            assets.srcDirs = ['assets']
+            assets.exclude '**/*.local.*', '**/*auth*', '**/*.png', '**/*.jpg'
+        }
+    }
+
+    compileOptions {
+        sourceCompatibility JavaVersion.VERSION_1_8
+        targetCompatibility JavaVersion.VERSION_1_8
+    }
+
+    kotlinOptions {
+        jvmTarget = '1.8'
+        freeCompilerArgs += ['-opt-in=androidx.media3.common.util.UnstableApi']
+    }
+
+    signingConfigs {
+        storeRelease {
+            if (System.getenv('RELEASE_KEYSTORE')) {
+                storeFile file(System.getenv('RELEASE_KEYSTORE'))
+                storePassword System.getenv('RELEASE_KEY_PASS')
+                keyAlias System.getenv('RELEASE_KEY_ALIAS') ?: 'safeer-browser'
+                keyPassword System.getenv('RELEASE_KEY_PASS')
+            }
+        }
+    }
+
+    buildTypes {
+        release {
+            minifyEnabled false
+            shrinkResources false
+            signingConfig System.getenv('RELEASE_KEYSTORE') ? signingConfigs.storeRelease : null
+        }
+        debug {
+            minifyEnabled false
+            signingConfig null
+        }
+    }
+
+    lintOptions {
+        abortOnError false
+        checkReleaseBuilds false
+    }
+
+    packagingOptions {
+        exclude 'META-INF/DEPENDENCIES'
+        exclude 'META-INF/LICENSE'
+        exclude 'META-INF/LICENSE.txt'
+        exclude 'META-INF/NOTICE'
+        exclude 'META-INF/NOTICE.txt'
+        exclude 'META-INF/*.kotlin_module'
+    }
+}
+
+dependencies {
+    implementation 'androidx.media3:media3-exoplayer:1.4.1'
+    implementation 'androidx.media3:media3-exoplayer-dash:1.4.1'
+    implementation 'androidx.media3:media3-datasource:1.4.1'
+    implementation 'androidx.webkit:webkit:1.11.0'
+    implementation 'org.jetbrains.kotlin:kotlin-stdlib:1.8.22'
+    // Ed25519 verification for the signed Safeer Threat Intelligence feed (see libs/README.md)
+    implementation files('libs/bcprov-ed25519-1.78.1.jar')
+    // WebSocket povezava sprejemnika Safeer Cast (knjiznici sta v libs/, gradnja ne rabi omrezja)
+    implementation files('libs/okhttp-4.12.0.jar')
+    implementation files('libs/okio-jvm-3.6.0.jar')
+}
+
+tasks.withType(JavaCompile).configureEach {
+    options.encoding = 'UTF-8'
+}
