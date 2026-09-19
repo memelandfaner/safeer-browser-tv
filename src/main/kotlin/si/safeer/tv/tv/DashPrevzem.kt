@@ -51,20 +51,16 @@ object DashPrevzem {
     /** Ali smo na tej strani ze ujeli pretok DASH? Po tem se odloci nacin predvajanja. */
     fun imaSejo(): Boolean = synchronized(lock) { mpdUrl.isNotEmpty() && !prepuscenBrezZaklepa(mpdUrl) }
 
-    /**
-     * Tokovi, ki jih domaci predvajalnik na tej strani ni zmogel (npr. licence ni dobil, ker jo
-     * stran poda samo v svojem JavaScriptu). Te predvaja stran sama v WebViewu; seznam velja,
-     * dokler uporabnik ne gre na drug izvor.
-     */
-    private val samoStran = HashSet<String>()
+    /** Tokovi, ki jih predvaja stran sama (glej [PredajaStrani]); velja do odhoda na drug izvor. */
+    private val samoStran = PredajaStrani { a, b -> sameDashStream(a, b) }
 
     fun prepustiStrani(mpd: String) {
-        synchronized(lock) { samoStran.add(mpd) }
+        synchronized(lock) { samoStran.prepusti(mpd) }
     }
 
     fun jePrepuscen(mpd: String): Boolean = synchronized(lock) { prepuscenBrezZaklepa(mpd) }
 
-    private fun prepuscenBrezZaklepa(mpd: String): Boolean = samoStran.any { sameDashStream(it, mpd) }
+    private fun prepuscenBrezZaklepa(mpd: String): Boolean = samoStran.jePrepuscen(mpd)
 
     /** Ali ta naslov kaze na manifest, ki ga predvajamo? */
     fun jeManifest(url: String): Boolean {
@@ -130,7 +126,7 @@ object DashPrevzem {
 
     fun resetAll() {
         synchronized(lock) {
-            samoStran.clear()
+            samoStran.pocisti()
             pageLicUrl = ""
             pageLicHeaders = emptyMap()
         }
