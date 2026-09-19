@@ -79,7 +79,27 @@ class AplikacijeHostaActivity : OsActivity(), LinkOdjemalec.Poslusalec {
         nadnaslov.text = getString(R.string.os_programi)
         naslov.text = getString(R.string.os_programi_naslov)
         mreza.adapter = prilagojevalnik
+        // Vrsta skupin in daljinec: skupina sledi fokusu samo, ko se uporabnik premika LEVO in
+        // DESNO po vrsti. Ce pride v vrsto od spodaj (iz programov) ali od iskanja, fokus pristane
+        // na izbrani skupini in seznam ostane, kakrsen je - sicer bi ze en pritisk Gor sredi
+        // brskanja zamenjal skupino pod prstom.
+        window.decorView.viewTreeObserver.addOnGlobalFocusChangeListener { stari, novi ->
+            if (novi == null || novi.parent !== skupineVrsta) return@addOnGlobalFocusChangeListener
+            val poVrsti = stari != null && stari.parent === skupineVrsta
+            if (poVrsti) {
+                (novi.tag as? String)?.let { izberiSkupino(it, novi) }
+            } else {
+                val izbrana = (0 until skupineVrsta.childCount).map { skupineVrsta.getChildAt(it) }
+                    .firstOrNull { it.isActivated }
+                if (izbrana != null && izbrana !== novi) izbrana.post { izbrana.requestFocus() }
+            }
+        }
         mreza.setOnItemClickListener { _, _, i, _ -> vidni.getOrNull(i)?.let { zazeni(it) } }
+        // Dolg pritisk OK: program, ki tece na racunalniku, je mogoce od tu tudi zapreti.
+        mreza.setOnItemLongClickListener { _, _, i, _ ->
+            vidni.getOrNull(i)?.let { moznosti(it) }
+            true
+        }
         pripraviIskanje()
         // Ob vstopu mora biti viden seznam, ne tipkovnica: ta se odpre sele, ko uporabnik izbere
         // iskalno polje in pritisne OK. (Mreza je ob vstopu se prazna, zato fokus pristane na
@@ -221,14 +241,24 @@ class AplikacijeHostaActivity : OsActivity(), LinkOdjemalec.Poslusalec {
             LinearLayout.LayoutParams.WRAP_CONTENT)
         mere.marginEnd = (8 * resources.displayMetrics.density).toInt()
         t.layoutParams = mere
-        t.setOnClickListener {
-            izbranaSkupina = kljuc
-            for (i in 0 until skupineVrsta.childCount) {
-                skupineVrsta.getChildAt(i).isActivated = skupineVrsta.getChildAt(i) === t
-            }
-            osveziSeznam()
+        t.setOnClickListener { izberiSkupino(kljuc, t) }
+        t.tag = kljuc
+        // Skupina, ki ima fokus, mora ostati vidna, tudi ko jih je vec, kot gre na zaslon.
+        t.setOnFocusChangeListener { _, ima ->
+            if (ima) skupineDrsnik.post { skupineDrsnik.requestChildRectangleOnScreen(t,
+                android.graphics.Rect(0, 0, t.width, t.height), false) }
         }
         return t
+    }
+
+    /** Skupina, ki jo uporabnik gleda: oznaci gumb in prerise seznam programov. */
+    private fun izberiSkupino(kljuc: String, gumb: View) {
+        if (izbranaSkupina == kljuc) return
+        izbranaSkupina = kljuc
+        for (i in 0 until skupineVrsta.childCount) {
+            skupineVrsta.getChildAt(i).isActivated = skupineVrsta.getChildAt(i) === gumb
+        }
+        osveziSeznam()
     }
 
     private fun pripraviIskanje() {
@@ -307,6 +337,28 @@ class AplikacijeHostaActivity : OsActivity(), LinkOdjemalec.Poslusalec {
      * nanj, da uporabnik to, kar je odprl, vidi in upravlja tu. Prej je ostal na seznamu in je
      * program tekel nekje, kjer ga ni videl - pri igri ali predvajalniku je bilo to neuporabno.
      */
+    /** Kaj lahko naredimo s programom: zaprem ga na racunalniku (zagon je navaden pritisk OK). */
+    private fun moznosti(p: Program) {
+        val r = racunalnik ?: return
+        val okno = android.app.AlertDialog.Builder(this, android.R.style.Theme_DeviceDefault_Dialog_Alert)
+            .setTitle(p.ime)
+            .setPositiveButton(getString(R.string.os_program_zapri)) { _, _ ->
+                link.ukaz(r.id, "apps.close", JSONObject().put("app", p.id), 10_000,
+                    LinkOdjemalec.Odgovor { izid, napaka ->
+                        if (isFinishing) return@Odgovor
+                        val ok = izid?.optBoolean("ok") == true
+                        val sporocilo = when {
+                            ok -> getString(R.string.os_program_zaprt, p.ime)
+                            izid?.optString("code") == "ne_tece" -> getString(R.string.os_program_ne_tece, p.ime)
+                            else -> izid?.optString("message").orEmpty().ifBlank { napaka.orEmpty() }
+                        }
+                        if (sporocilo.isNotBlank()) Toast.makeText(this, sporocilo, Toast.LENGTH_LONG).show()
+                    })
+            }
+            .setNegativeButton(getString(R.string.os_preklici), null)
+        Kontroler.pokazi(okno.show())
+    }
+
     private fun zazeni(p: Program) {
         val r = racunalnik ?: return
         val zaslon = link.naprave.any { it.id == r.id && it.zmoznosti.contains("desktop") }
@@ -322,7 +374,8 @@ class AplikacijeHostaActivity : OsActivity(), LinkOdjemalec.Poslusalec {
             if (zaslon) {
                 Toast.makeText(this, getString(R.string.os_programi_odpiram, p.ime), Toast.LENGTH_SHORT).show()
                 startActivity(Intent(this, ZaslonActivity::class.java)
-                    .putExtra(DatotekeActivity.EXTRA_RACUNALNIK, r.id))
+                    .putExtra(DatotekeActivity.EXTRA_RACUNALNIK, r.id)
+                    .putExtra(ZaslonActivity.EXTRA_ZASLON, "apps"))
             } else {
                 Toast.makeText(this, getString(R.string.os_programi_zagnan, p.ime,
                     r.ime.ifBlank { r.id }), Toast.LENGTH_LONG).show()

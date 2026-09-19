@@ -217,6 +217,8 @@
     <string name="os_zaslon_ni_dovoljeno">%1$s zaslona ne deli. V Safeer Controlu na tem računalniku vklopi \'Zaslon za televizor\'.</string>
     <string name="os_zaslon_napaka">Ni šlo: %1$s</string>
     <string name="os_zaslon_koncano">Računalnik je končal sejo.</string>
+    <string name="os_zaslon_program_zaprt">Program na računalniku se je zaprl.</string>
+    <string name="os_zaslon_ni_okna">Program se na računalniku ni odprl.</string>
     <string name="os_zaslon_meritve">%1$d×%2$d · %3$.0f sličic/s · %4$.1f Mb/s · dekoder %5$d ms</string>
     <string name="os_zaslon_ponovno">Povezava je padla. Poskušam znova ...</string>
     <string name="os_zaslon_zvok">zvok</string>
@@ -321,4 +323,22 @@
     <string name="os_moc_gpu_strojno">strojno kodiranje slike</string>
     <string name="os_moc_gpu_brez">brez strojnega kodiranja</string>
     <string name="os_datoteke_pomoc_drzi">Drži OK · odpri na računalniku</string>
+    <string name="os_program_zapri">Zapri na računalniku</string>
+    <string name="os_program_zaprt">%1$s se zapira na računalniku.</string>
+    <string name="os_program_ne_tece">%1$s na računalniku ne teče.</string>
+    <string name="os_plosek_preizkus">Preizkusi tipke</string>
+    <string name="os_plosek_preizkus_opis">Kaj televizor dobi od igralnega ploščka in kaj bi poslal računalniku</string>
+    <string name="os_plosek_opis">Pritiskaj tipke in premikaj palice. Tu se vidi, kaj televizor zares dobi — in kaj od tega znamo poslati računalniku. Nič se ne pošlje; za izhod pritisni Nazaj.</string>
+    <string name="os_plosek_ni">Noben igralni plošček ni priklopljen. Poveži ga s televizorjem (Bluetooth ali kabel) in pokazal se bo tukaj.</string>
+    <string name="os_plosek_naprava">• %1$s\n   osi: %2$s</string>
+    <string name="os_plosek_drzane">Držane tipke: %1$s</string>
+    <string name="os_plosek_osi">Osi:\n   %1$s</string>
+    <string name="os_plosek_zadnja">%1$s (%2$d) — %3$s</string>
+    <string name="os_plosek_kot_gumb">gre v računalnik kot gumb »%1$s«</string>
+    <string name="os_plosek_kot_os">gre v računalnik kot os »%1$s«</string>
+    <string name="os_plosek_ne_poslje">te tipke računalniku ne pošljemo</string>
+    <string name="os_zapri_vse">Zapri vse (%1$d)</string>
+    <string name="os_zaprtih">Zaprtih programov: %1$d</string>
+    <string name="os_zaslon_meni_start">Meni Start</string>
+    <string name="os_zaslon_naslednji">Naslednji program</string>
 </resources>
