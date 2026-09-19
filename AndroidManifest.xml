@@ -44,6 +44,8 @@
     <uses-permission android:name="android.permission.READ_MEDIA_VIDEO" />
     <uses-permission android:name="android.permission.READ_MEDIA_AUDIO" />
     <uses-permission android:name="android.permission.READ_MEDIA_IMAGES" />
+    <!-- Android 14+: uporabnik lahko dovoli samo izbrane slike in videe; pokazemo tiste. -->
+    <uses-permission android:name="android.permission.READ_MEDIA_VISUAL_USER_SELECTED" />
     <!-- Vrsta s spletnimi aplikacijami na domacem zaslonu televizorja (kanal predogleda). -->
     <uses-permission android:name="com.android.providers.tv.permission.WRITE_EPG_DATA" />
 
@@ -94,7 +96,8 @@
         android:allowBackup="false"
         android:dataExtractionRules="@xml/izvoz_podatkov"
         android:fullBackupContent="@xml/varnostna_kopija"
-        tools:targetApi="31"
+        tools:targetApi="33"
+        android:enableOnBackInvokedCallback="false"
         android:usesCleartextTraffic="true"
         android:supportsRtl="true">
 
@@ -144,7 +147,7 @@
             android:theme="@style/Theme.SafeerOs"
             android:launchMode="singleTask"
             android:taskAffinity="${applicationId}.os"
-            android:screenOrientation="landscape"
+            android:screenOrientation="landscape" tools:ignore="DiscouragedApi"
             android:configChanges="orientation|screenSize|keyboard|keyboardHidden|navigation" />
 
         <activity
@@ -153,37 +156,37 @@
             android:label="@string/os_nastavitve"
             android:theme="@style/Theme.SafeerOs"
             android:taskAffinity="${applicationId}.os"
-            android:screenOrientation="landscape"
+            android:screenOrientation="landscape" tools:ignore="DiscouragedApi"
             android:configChanges="orientation|screenSize|keyboard|keyboardHidden|navigation" />
 
         <activity android:name="si.safeer.tv.os.BesediloActivity" android:exported="false" android:theme="@style/Theme.SafeerOs"
-            android:taskAffinity="${applicationId}.os" android:screenOrientation="landscape"
+            android:taskAffinity="${applicationId}.os" android:screenOrientation="landscape" tools:ignore="DiscouragedApi"
             android:configChanges="orientation|screenSize|keyboard|keyboardHidden|navigation" />
         <activity android:name="si.safeer.tv.os.VidezActivity" android:exported="false" android:theme="@style/Theme.SafeerOs"
-            android:taskAffinity="${applicationId}.os" android:screenOrientation="landscape"
+            android:taskAffinity="${applicationId}.os" android:screenOrientation="landscape" tools:ignore="DiscouragedApi"
             android:configChanges="orientation|screenSize|keyboard|keyboardHidden|navigation" />
         <activity android:name="si.safeer.tv.os.DatotekeActivity" android:exported="false" android:theme="@style/Theme.SafeerOs"
-            android:taskAffinity="${applicationId}.os" android:screenOrientation="landscape"
+            android:taskAffinity="${applicationId}.os" android:screenOrientation="landscape" tools:ignore="DiscouragedApi"
             android:configChanges="orientation|screenSize|keyboard|keyboardHidden|navigation" />
         <activity android:name="si.safeer.tv.os.ZaslonActivity" android:exported="false" android:theme="@style/Theme.SafeerOs.Predvajalnik"
-            android:taskAffinity="${applicationId}.os" android:screenOrientation="landscape"
+            android:taskAffinity="${applicationId}.os" android:screenOrientation="landscape" tools:ignore="DiscouragedApi"
             android:configChanges="orientation|screenSize|keyboard|keyboardHidden|navigation" />
         <activity android:name="si.safeer.tv.os.AplikacijeTvActivity" android:exported="false" android:theme="@style/Theme.SafeerOs"
-            android:taskAffinity="${applicationId}.os" android:screenOrientation="landscape"
+            android:taskAffinity="${applicationId}.os" android:screenOrientation="landscape" tools:ignore="DiscouragedApi"
             android:configChanges="orientation|screenSize|keyboard|keyboardHidden|navigation" />
         <activity android:name="si.safeer.tv.os.PlosekActivity" android:exported="false"
-            android:theme="@style/Theme.SafeerOs" android:screenOrientation="landscape" />
+            android:theme="@style/Theme.SafeerOs" android:screenOrientation="landscape" tools:ignore="DiscouragedApi" />
         <activity android:name="si.safeer.tv.os.NapraveActivity" android:exported="false" android:theme="@style/Theme.SafeerOs"
-            android:taskAffinity="${applicationId}.os" android:screenOrientation="landscape"
+            android:taskAffinity="${applicationId}.os" android:screenOrientation="landscape" tools:ignore="DiscouragedApi"
             android:configChanges="orientation|screenSize|keyboard|keyboardHidden|navigation" />
         <activity android:name="si.safeer.tv.os.AplikacijeHostaActivity" android:exported="false" android:theme="@style/Theme.SafeerOs"
-            android:taskAffinity="${applicationId}.os" android:screenOrientation="landscape"
+            android:taskAffinity="${applicationId}.os" android:screenOrientation="landscape" tools:ignore="DiscouragedApi"
             android:configChanges="orientation|screenSize|keyboard|keyboardHidden|navigation" />
         <activity android:name="si.safeer.tv.os.PredvajalnikActivity" android:exported="false" android:theme="@style/Theme.SafeerOs.Predvajalnik"
-            android:taskAffinity="${applicationId}.os" android:screenOrientation="landscape"
+            android:taskAffinity="${applicationId}.os" android:screenOrientation="landscape" tools:ignore="DiscouragedApi"
             android:configChanges="orientation|screenSize|keyboard|keyboardHidden|navigation" />
         <activity android:name="si.safeer.tv.os.SlikaActivity" android:exported="false" android:theme="@style/Theme.SafeerOs.Predvajalnik"
-            android:taskAffinity="${applicationId}.os" android:screenOrientation="landscape"
+            android:taskAffinity="${applicationId}.os" android:screenOrientation="landscape" tools:ignore="DiscouragedApi"
             android:configChanges="orientation|screenSize|keyboard|keyboardHidden|navigation" />
 
         <!-- Safeer Scit: filter DNS za ves televizor, v lastnem procesu (mapiran nabor domen, brez kopice brskalnika) -->
@@ -192,7 +195,10 @@
             android:exported="false"
             android:process=":scit"
             android:permission="android.permission.BIND_VPN_SERVICE"
-            android:foregroundServiceType="systemExempted">
+            android:foregroundServiceType="systemExempted"
+            tools:ignore="ForegroundServicePermission">
+            <!-- systemExempted je dovoljen aplikacijam VPN (Scit je VpnService); dovoljenje
+                 FOREGROUND_SERVICE_SYSTEM_EXEMPTED je zgoraj, alarmov ne rabimo. -->
             <intent-filter>
                 <action android:name="android.net.VpnService" />
             </intent-filter>
