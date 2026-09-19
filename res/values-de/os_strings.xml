@@ -343,4 +343,24 @@
     <string name="os_zaslon_naslednji">Nächstes Programm</string>
     <string name="os_zaslon_meni_plosek_igra">Controller als Gamepad</string>
     <string name="os_zaslon_meni_plosek_namizje">Controller als Tastatur und Maus</string>
+    <string name="os_zaslon_brez_gumbov">Dieses Programm verrät nicht, wo seine Schaltflächen sind – die Pfeiltasten bewegen die Maus</string>
+    <string name="os_zaslon_profil_brskalnik">Browser · Rot zurück · Grün vor · Gelb neu laden · Blau neuer Tab</string>
+    <string name="os_zaslon_meni_vleci">Ziehen</string>
+    <string name="os_zaslon_meni_spusti">Loslassen</string>
+    <string name="os_zaslon_meni_povecava">Vergrößern</string>
+    <string name="os_zaslon_meni_povecava_izklopi">Vergrößerung aus</string>
+    <string name="os_zaslon_vlecem">Ziehen – Zeiger bewegen und OK drücken zum Loslassen</string>
+    <string name="os_seznanitev_naslov">Neues Gerät</string>
+    <string name="os_seznanitev_opis">%1$s möchte sich mit Safeer Link auf diesem Fernseher verbinden. Gib dort diesen Code ein:</string>
+    <string name="os_seznanitev_zavrni">Ablehnen</string>
+    <string name="os_vse_nadnaslov">Apps</string>
+    <string name="os_vse_naslov">Alles, was du öffnen kannst</string>
+    <string name="os_vir_vse">Alle</string>
+    <string name="os_vir_tv">Fernseher</string>
+    <string name="os_vir_splet">Web</string>
+    <string name="os_vir_racunalnik">Computer</string>
+    <string name="os_priljubljen_dodaj">Zum Startbildschirm</string>
+    <string name="os_priljubljen_odstrani">Vom Startbildschirm entfernen</string>
+    <string name="os_odsek_priljubljene">Lieblings-Apps</string>
+    <string name="os_vse_kartica">Alle Apps</string>
 </resources>

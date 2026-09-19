@@ -38,7 +38,18 @@ open class OsActivity : Activity() {
         return super.onGenericMotionEvent(dogodek)
     }
 
+    // ------------------------------------------------------------------ koda za novo napravo
+
+    /** Nova naprava se povezuje: kodo pokazemo cez karkoli je na zaslonu (glej KodaNaZaslonu). */
+    private val koda by lazy { KodaNaZaslonu(this) }
+
+    override fun onResume() {
+        super.onResume()
+        koda.zacni()
+    }
+
     override fun onPause() {
+        koda.ustavi()
         palica.ustavi()
         super.onPause()
     }

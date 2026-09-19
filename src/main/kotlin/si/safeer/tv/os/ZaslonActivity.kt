@@ -87,6 +87,18 @@ class ZaslonActivity : Activity(), LinkOdjemalec.Poslusalec {
     /** Nazadnje poslani odkloni palic in sprozilcev; posiljamo samo, kar se je res spremenilo. */
     private val plosekOdkloni = HashMap<String, Float>()
     private var namigPokazan = false
+    private lateinit var okvir: View
+    /** Velikost slike racunalnika (tocke drugega zaslona) in kje na televizorju je slika zdaj. */
+    private var slikaW = 0
+    private var slikaH = 0
+    private var osnovaL = 0; private var osnovaT = 0; private var osnovaW = 0; private var osnovaH = 0
+    private var trenL = 0; private var trenT = 0; private var trenW = 0; private var trenH = 0
+    /** Vlecenje (meni seje): levi gumb je drzan, OK ga spusti. */
+    private var vlecem = false
+    /** Povecava okoli kazalca (meni seje), izrisana na televizorju. */
+    private var povecava = false
+    private var brezGumbovPovedano = false
+    private var zadnjiFokusDaljinec = false
     private val glavna = android.os.Handler(android.os.Looper.getMainLooper())
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -98,9 +110,42 @@ class ZaslonActivity : Activity(), LinkOdjemalec.Poslusalec {
         meritve = findViewById(R.id.meritve)
         namig = findViewById(R.id.namig)
         tipkovnicaPogled = findViewById(R.id.tipkovnica)
+        // Okvir izbire: ko krizec ali daljinec skoci na gumb, ga televizor obrobi sam (ostro, ne
+        // glede na kakovost slike). Takoj ko se kazalec premakne drugace, izgine.
+        val gostota = resources.displayMetrics.density
+        okvir = View(this).apply {
+            background = android.graphics.drawable.GradientDrawable().apply {
+                cornerRadius = 10 * gostota
+                setColor(android.graphics.Color.parseColor("#1A2DD4BF"))
+                setStroke((3 * gostota).toInt(), android.graphics.Color.parseColor("#2DD4BF"))
+            }
+            visibility = View.GONE
+        }
+        findViewById<android.widget.FrameLayout>(R.id.koren).addView(okvir, 1,
+            android.widget.FrameLayout.LayoutParams(0, 0))
+        // Tablica: prst je miska (dotik klikne tam, kamor pokaze), meni seje pa je gumb v kotu,
+        // ker tablica nima tipke Meni in ne dolgega Nazaj.
+        if (naDotik()) {
+            pogled.setOnTouchListener { _, e -> dotik(e) }
+            val gumb = TextView(this).apply {
+                text = "\u2630"
+                textSize = 20f
+                setTextColor(getColor(R.color.os_besedilo))
+                setBackgroundResource(R.drawable.os_znacka)
+                gravity = android.view.Gravity.CENTER
+                alpha = 0.85f
+                contentDescription = getString(R.string.os_zaslon)
+                setOnClickListener { odpriMeni() }
+            }
+            val velikost = (48 * gostota).toInt()
+            val lpGumb = android.widget.FrameLayout.LayoutParams(velikost, velikost)
+            lpGumb.gravity = android.view.Gravity.BOTTOM or android.view.Gravity.END
+            lpGumb.setMargins(0, 0, (14 * gostota).toInt(), (14 * gostota).toInt())
+            findViewById<android.widget.FrameLayout>(R.id.koren).addView(gumb, lpGumb)
+        }
         tipkovnica = ZaslonTipkovnica(this, tipkovnicaPogled,
-            naBesedilo = { z -> odjemalec?.posljiVnos(JSONObject().put("vrsta", "besedilo").put("besedilo", z)) },
-            naTipko = { t -> odjemalec?.posljiVnos(JSONObject().put("vrsta", "tipka").put("tipka", t)) })
+            naBesedilo = { z -> poslji(JSONObject().put("vrsta", "besedilo").put("besedilo", z)) },
+            naTipko = { t -> poslji(JSONObject().put("vrsta", "tipka").put("tipka", t)) })
         // Vedno najboljse, kar zmore racunalnik: uporabniku ni treba izbirati med kakovostmi,
         // ker za nizjo ni razloga - meritve kazejo, da ostrejsa slika skoraj nic ne stane.
         kakovost = intent.getStringExtra(EXTRA_KAKOVOST) ?: "najvisja"
@@ -127,10 +172,29 @@ class ZaslonActivity : Activity(), LinkOdjemalec.Poslusalec {
         if (seja == null) zahtevajSejo()
     }
 
+    /** Koda za novo napravo (tablica, telefon) se pokaze tudi cez sliko racunalnika. */
+    private val koda by lazy { KodaNaZaslonu(this) }
+
+    override fun onResume() {
+        super.onResume()
+        koda.zacni()
+    }
+
+    override fun onPause() {
+        koda.ustavi()
+        super.onPause()
+    }
+
     override fun onStop() {
         // Uporabnik je odsel (Domov, klic, ugasnjen zaslon): kar je drzal, mora gor - sicer bi
         // tipka na racunalniku ostala pritisnjena.
         sprostiDrzane()
+        // Program s televizorja: kdor sejo zapusti (tudi s tipko Domov ali ko ugasne televizor),
+        // ga ne zeli pustiti teci na nevidnem zaslonu racunalnika.
+        if (naDrugem && !isChangingConfigurations && !isFinishing) {
+            koncaj(zapriPrograme = true)
+            finish()
+        }
         link.odstrani(this)
         super.onStop()
     }
@@ -168,6 +232,11 @@ class ZaslonActivity : Activity(), LinkOdjemalec.Poslusalec {
                 if (izid == null) { pokazi(getString(R.string.os_zaslon_napaka, napaka)); return@Odgovor }
                 if (!izid.optBoolean("ok")) {
                     val koda = izid.optString("code")
+                    if (koda == "ni_programa") {
+                        // Program na racunalniku ni vec odprt: namesto napake pospravimo in gremo domov.
+                        Toast.makeText(this, getString(R.string.os_zaslon_program_zaprt), Toast.LENGTH_LONG).show()
+                        koncaj(); finish(); return@Odgovor
+                    }
                     pokazi(if (koda == "ni_dovoljeno") getString(R.string.os_zaslon_ni_dovoljeno,
                         r.ime.ifBlank { r.id }) else getString(R.string.os_zaslon_napaka, izid.optString("message")))
                     return@Odgovor
@@ -213,12 +282,20 @@ class ZaslonActivity : Activity(), LinkOdjemalec.Poslusalec {
             lp.height = (visinaSlike * merilo).toInt()
             lp.gravity = android.view.Gravity.CENTER
             pogled.layoutParams = lp
+            osnovaW = lp.width; osnovaH = lp.height
+            osnovaL = (sirina - lp.width) / 2; osnovaT = (visina - lp.height) / 2
+            trenL = osnovaL; trenT = osnovaT; trenW = osnovaW; trenH = osnovaH
         }
     }
 
     private fun zacniPretok(podatki: JSONObject) {
         val r = racunalnik ?: return
-        uravnajRazmerje(podatki.optInt("width"), podatki.optInt("height"))
+        slikaW = podatki.optInt("width"); slikaH = podatki.optInt("height")
+        // Nova ali obnovljena seja: nic od prejsnje (okvir, povecava, vlecenje) ne sme ostati.
+        okvir.visibility = View.GONE
+        povecava = false
+        vlecem = false
+        uravnajRazmerje(slikaW, slikaH)
         val naslov = r.naslov.ifBlank { "" }
         if (naslov.isBlank()) { pokazi(getString(R.string.os_zaslon_napaka, "ni naslova")); return }
         odjemalec?.ustavi()
@@ -262,7 +339,8 @@ class ZaslonActivity : Activity(), LinkOdjemalec.Poslusalec {
                 android.util.Log.d("SafeerZaslon",
                     "${s.sirina}x${s.visina} ${s.naSekundo} sl/s ${s.megabitov} Mb/s " +
                     "dekoder ${s.dekoderMs} ms zvok=${s.zvok}")
-            })
+            },
+            naObvestilo = { ob -> runOnUiThread { obvestilo(ob) } })
         odjemalec = o
         o.zacni(pogled.holder.surface)
     }
@@ -319,6 +397,14 @@ class ZaslonActivity : Activity(), LinkOdjemalec.Poslusalec {
         // Glasnost pusti televizorju: uporabnik jo pricakuje tam, kjer je zvok.
         if (keyCode == KeyEvent.KEYCODE_VOLUME_UP || keyCode == KeyEvent.KEYCODE_VOLUME_DOWN ||
             keyCode == KeyEvent.KEYCODE_VOLUME_MUTE) return super.onKeyDown(keyCode, event)
+        // Barvne tipke daljinca: v brskalniku nazaj, naprej, osvezi, nov zavihek (racunalnik ve,
+        // kateri program je v ospredju; drugod tipka ne naredi nicesar).
+        barva(keyCode)?.let { b ->
+            if (naDrugem && fokusPodprt) {
+                if ((event?.repeatCount ?: 0) == 0) poslji(JSONObject().put("vrsta", "barva").put("barva", b))
+                return true
+            }
+        }
         // Plosek v igro: Start in Select takrat pripadata igri, ne meniju seje.
         if (plosekVIgro(keyCode, event, true)) return true
         if (ZaslonVnos.jePreklop(keyCode)) { odpriMeni(); return true }
@@ -331,7 +417,7 @@ class ZaslonActivity : Activity(), LinkOdjemalec.Poslusalec {
                 return true
             }
             if (ponovitev == 0 || ponovitev % PONOVI_DRZANJE == 0) {
-                ZaslonVnos.drzanje(keyCode, true)?.let { odjemalec?.posljiVnos(it) }
+                ZaslonVnos.drzanje(keyCode, true)?.let { poslji(it) }
             }
             drzane.add(keyCode)
             return true
@@ -358,25 +444,26 @@ class ZaslonActivity : Activity(), LinkOdjemalec.Poslusalec {
             // Prvi pritisk drzimo; med drzanjem vsako sekundo javimo, da je se zivo (racunalnik
             // pozabljene tipke sam spusti, ce televizor utihne).
             if (ponovitev == 0 || ponovitev % PONOVI_DRZANJE == 0) {
-                ZaslonVnos.drzanje(keyCode, true)?.let { odjemalec?.posljiVnos(it) }
+                ZaslonVnos.drzanje(keyCode, true)?.let { poslji(it) }
             }
             drzane.add(keyCode)
             return true
         }
         val dogodek = ZaslonVnos.izTipke(keyCode, event) ?: return super.onKeyDown(keyCode, event)
-        odjemalec?.posljiVnos(dogodek)
+        poslji(dogodek)
         return true
     }
 
     /** Vse drzane tipke in gumbe spustimo (odhod z zaslona, konec seje). */
     private fun sprostiDrzane() {
-        for (koda in drzane.toList()) ZaslonVnos.drzanje(koda, false)?.let { odjemalec?.posljiVnos(it) }
+        if (vlecem) { vlecem = false; poslji(JSONObject().put("vrsta", "gumb").put("gumb", "levi").put("dol", false)) }
+        for (koda in drzane.toList()) ZaslonVnos.drzanje(koda, false)?.let { poslji(it) }
         drzane.clear()
         spustiKrizec()
-        for (koda in plosekDrzani.toList()) ZaslonVnos.plosekTipka(koda, false)?.let { odjemalec?.posljiVnos(it) }
+        for (koda in plosekDrzani.toList()) ZaslonVnos.plosekTipka(koda, false)?.let { poslji(it) }
         plosekDrzani.clear()
         for (os in plosekOdkloni.keys.toList()) {
-            if (plosekOdkloni[os] != 0f) odjemalec?.posljiVnos(ZaslonVnos.plosekOs(os, 0f))
+            if (plosekOdkloni[os] != 0f) poslji(ZaslonVnos.plosekOs(os, 0f))
         }
         plosekOdkloni.clear()
     }
@@ -395,7 +482,7 @@ class ZaslonActivity : Activity(), LinkOdjemalec.Poslusalec {
         // Kadar plosek krizec posilja kot os, tipke krizca ne posiljamo (sla bi dvojno) in jih
         // tudi ne pozremo - naj jih dobi, kdor jih zna uporabiti.
         val ukaz = ZaslonVnos.plosekTipka(koda, dol, dogodek) ?: return false
-        odjemalec?.posljiVnos(ukaz)
+        poslji(ukaz)
         if (dol) plosekDrzani.add(koda) else plosekDrzani.remove(koda)
         return true
     }
@@ -404,7 +491,7 @@ class ZaslonActivity : Activity(), LinkOdjemalec.Poslusalec {
         if (keyCode == KeyEvent.KEYCODE_BACK) { koncaj(zapriPrograme = true); finish(); return true }
         if (kazalec && (keyCode == KeyEvent.KEYCODE_DPAD_CENTER || keyCode == KeyEvent.KEYCODE_BUTTON_A)) {
             okDrzan = false
-            odjemalec?.posljiVnos(ZaslonVnos.klik("desni"))
+            poslji(ZaslonVnos.klik("desni"))
             return true
         }
         return super.onKeyLongPress(keyCode, event)
@@ -413,25 +500,26 @@ class ZaslonActivity : Activity(), LinkOdjemalec.Poslusalec {
     override fun onKeyUp(keyCode: Int, event: KeyEvent?): Boolean {
         if (keyCode == KeyEvent.KEYCODE_BACK) {
             if (event != null && !event.isCanceled && !event.isLongPress) {
-                odjemalec?.posljiVnos(org.json.JSONObject().put("vrsta", "tipka").put("tipka", "nazaj"))
+                poslji(org.json.JSONObject().put("vrsta", "tipka").put("tipka", "nazaj"))
             }
             return true
         }
+        if (barva(keyCode) != null && naDrugem && fokusPodprt) return true
         if (tipkovnica?.jeOdprta == true) return super.onKeyUp(keyCode, event)
         if (plosekVIgro(keyCode, event, false)) return true
         if (ZaslonVnos.jeIzPlosecka(event) && ZaslonVnos.smer(keyCode) != null && drzane.remove(keyCode)) {
-            ZaslonVnos.drzanje(keyCode, false)?.let { odjemalec?.posljiVnos(it) }
+            ZaslonVnos.drzanje(keyCode, false)?.let { poslji(it) }
             return true
         }
         if (kazalec) {
             if (ZaslonVnos.smer(keyCode) != null) { ustaviSmer(); return true }
             if (keyCode == KeyEvent.KEYCODE_DPAD_CENTER || keyCode == KeyEvent.KEYCODE_BUTTON_A) {
-                if (okDrzan) { okDrzan = false; odjemalec?.posljiVnos(ZaslonVnos.klik("levi")) }
+                if (okDrzan) { okDrzan = false; if (vlecem) preklopiVlecenje() else poslji(ZaslonVnos.klik("levi")) }
                 return true
             }
         }
         if (drzane.remove(keyCode)) {
-            ZaslonVnos.drzanje(keyCode, false)?.let { odjemalec?.posljiVnos(it) }
+            ZaslonVnos.drzanje(keyCode, false)?.let { poslji(it) }
             return true
         }
         return super.onKeyUp(keyCode, event)
@@ -449,7 +537,13 @@ class ZaslonActivity : Activity(), LinkOdjemalec.Poslusalec {
         // Na locenem zaslonu menija Start ni; tam je prvi preklop med odprtimi programi.
         if (naDrugem) dejanja.add(getString(R.string.os_zaslon_naslednji) to { posljiTipko("preklopi_okno") })
         else dejanja.add(getString(R.string.os_zaslon_meni_start) to { posljiTipko("domov") })
-        dejanja.add(getString(R.string.os_zaslon_meni_tipkovnica) to { tipkovnica?.odpri() })
+        dejanja.add(getString(R.string.os_zaslon_meni_tipkovnica) to { odpriTipkovnico() })
+        if (naDrugem && fokusPodprt) {
+            dejanja.add(getString(if (vlecem) R.string.os_zaslon_meni_spusti else R.string.os_zaslon_meni_vleci) to
+                { preklopiVlecenje() })
+            dejanja.add(getString(if (povecava) R.string.os_zaslon_meni_povecava_izklopi
+                else R.string.os_zaslon_meni_povecava) to { preklopiPovecavo() })
+        }
         dejanja.add(getString(
             if (kazalec) R.string.os_zaslon_meni_tipke else R.string.os_zaslon_meni_kazalec) to { preklopiNacin() })
         if (plosekVRacunalnik) dejanja.add(getString(
@@ -493,7 +587,7 @@ class ZaslonActivity : Activity(), LinkOdjemalec.Poslusalec {
     }
 
     private fun posljiTipko(ime: String) {
-        odjemalec?.posljiVnos(JSONObject().put("vrsta", "tipka").put("tipka", ime))
+        poslji(JSONObject().put("vrsta", "tipka").put("tipka", ime))
     }
 
     /** Preklop med kazalcem in tipkami; uporabnik takoj vidi, kaj zdaj delajo tipke. */
@@ -534,7 +628,7 @@ class ZaslonActivity : Activity(), LinkOdjemalec.Poslusalec {
         // program ne pozna, racunalnik kazalec le rahlo premakne. Drzanje kazalec vodi prosto.
         if (naDrugem && fokusPodprt) posljiFokus(koda, true)
         else ZaslonVnos.premik(nova.first * ZaslonVnos.KAZALEC_KORAK, nova.second * ZaslonVnos.KAZALEC_KORAK)
-            ?.let { odjemalec?.posljiVnos(it) }
+            ?.let { poslji(it) }
         smerOd = android.os.SystemClock.uptimeMillis()
         if (smerTece) return
         smerTece = true
@@ -546,7 +640,7 @@ class ZaslonActivity : Activity(), LinkOdjemalec.Poslusalec {
                     glavna.postDelayed(this, 16); return
                 }
                 ZaslonVnos.premik((s.first * hitrost).toInt(), (s.second * hitrost).toInt())
-                    ?.let { odjemalec?.posljiVnos(it) }
+                    ?.let { poslji(it) }
                 hitrost = (hitrost * ZaslonVnos.KAZALEC_POSPESEK).coerceAtMost(ZaslonVnos.KAZALEC_NAJVECJA)
                 glavna.postDelayed(this, 16)
             }
@@ -560,8 +654,8 @@ class ZaslonActivity : Activity(), LinkOdjemalec.Poslusalec {
 
     /** Miska, prikljucena na televizor, in leva palica igralnega plosecka. */
     override fun onGenericMotionEvent(event: MotionEvent): Boolean {
-        ZaslonVnos.izMiske(event)?.let { odjemalec?.posljiVnos(it); return true }
-        ZaslonVnos.izMiskinihGumbov(event)?.let { odjemalec?.posljiVnos(it); return true }
+        ZaslonVnos.izMiske(event)?.let { poslji(it); return true }
+        ZaslonVnos.izMiskinihGumbov(event)?.let { poslji(it); return true }
         // Odprta zaslonska tipkovnica: plosek je daljinec - krizec in palica premikata po tipkah.
         // Dogodka ne porabimo, zato ga Android sam spremeni v smerne tipke za fokus.
         if (tipkovnica?.jeOdprta == true &&
@@ -578,7 +672,7 @@ class ZaslonActivity : Activity(), LinkOdjemalec.Poslusalec {
                 for ((os, vrednost) in odkloni) {
                     if (plosekOdkloni[os] == vrednost) continue
                     plosekOdkloni[os] = vrednost
-                    odjemalec?.posljiVnos(ZaslonVnos.plosekOs(os, vrednost))
+                    poslji(ZaslonVnos.plosekOs(os, vrednost))
                 }
                 return true
             }
@@ -651,7 +745,8 @@ class ZaslonActivity : Activity(), LinkOdjemalec.Poslusalec {
         val d = org.json.JSONObject().put("vrsta", "fokus").put("smer", smer)
         // Daljinec vodi kazalec: kjer polj ni, naj se kazalec le malo premakne (ne smerna tipka).
         if (daljinec) d.put("sicer", "kazalec")
-        odjemalec?.posljiVnos(d)
+        zadnjiFokusDaljinec = daljinec
+        poslji(d)
     }
 
     private var fokusSmer = 0
@@ -663,9 +758,251 @@ class ZaslonActivity : Activity(), LinkOdjemalec.Poslusalec {
         }
     }
 
+    /** Vsak dogodek za racunalnik gre tu skozi: premik, klik ali tipka skrije okvir izbire. */
+    private fun poslji(d: JSONObject) {
+        val vrsta = d.optString("vrsta")
+        // Klik okvirja ne skrije: racunalnik takoj preveri, ali je gumb se tam (kalkulator), in
+        // okvir potrdi ali pospravi. Vse drugo (premik, tipka, kolesce) ga skrije takoj.
+        if (okvir.visibility == View.VISIBLE && vrsta != "fokus" && vrsta != "povecava" && vrsta != "klik")
+            okvir.visibility = View.GONE
+        odjemalec?.posljiVnos(d)
+    }
+
+    // ------------------------------------------------------------------ dotik (tablica)
+
+    /**
+     * Na tablici je prava tipkovnica tista, ki jo uporabnik pozna: sistemska. Nevidno polje ujame,
+     * kar natipka, in to takoj poslje racunalniku (crke kot besedilo, brisanje in Enter kot tipki).
+     * Predlogi so izklopljeni: sestavljanje besede bi racunalniku poslalo polovicne crke.
+     */
+    private var sistemskoPolje: android.widget.EditText? = null
+
+    private fun odpriTipkovnico() {
+        if (!naDotik()) { tipkovnica?.odpri(); return }
+        val polje = sistemskoPolje ?: android.widget.EditText(this).apply {
+            inputType = android.text.InputType.TYPE_CLASS_TEXT or
+                android.text.InputType.TYPE_TEXT_VARIATION_VISIBLE_PASSWORD or
+                android.text.InputType.TYPE_TEXT_FLAG_NO_SUGGESTIONS
+            imeOptions = android.view.inputmethod.EditorInfo.IME_FLAG_NO_EXTRACT_UI or
+                android.view.inputmethod.EditorInfo.IME_ACTION_NONE
+            setText(" ")
+            alpha = 0f
+            addTextChangedListener(object : android.text.TextWatcher {
+                private var ponastavljam = false
+                override fun beforeTextChanged(s: CharSequence?, a: Int, b: Int, c: Int) { }
+                override fun onTextChanged(s: CharSequence?, a: Int, b: Int, c: Int) { }
+                override fun afterTextChanged(s: android.text.Editable?) {
+                    if (ponastavljam || s == null) return
+                    val t = s.toString()
+                    when {
+                        t.isEmpty() -> poslji(JSONObject().put("vrsta", "tipka").put("tipka", "vracalka"))
+                        t.length > 1 -> {
+                            val novo = t.substring(1)
+                            val brezNove = novo.replace("\n", "")
+                            if (brezNove.isNotEmpty()) poslji(JSONObject().put("vrsta", "besedilo").put("besedilo", brezNove))
+                            if (novo.contains('\n')) poslji(JSONObject().put("vrsta", "tipka").put("tipka", "vnasalka"))
+                        }
+                        else -> return
+                    }
+                    ponastavljam = true
+                    s.replace(0, s.length, " ")
+                    setSelection(1)
+                    ponastavljam = false
+                }
+            })
+            setOnKeyListener { _, koda, e ->
+                if (e.action == KeyEvent.ACTION_DOWN && (koda == KeyEvent.KEYCODE_ENTER || koda == KeyEvent.KEYCODE_NUMPAD_ENTER)) {
+                    poslji(JSONObject().put("vrsta", "tipka").put("tipka", "vnasalka")); true
+                } else if (e.action == KeyEvent.ACTION_DOWN && koda == KeyEvent.KEYCODE_DEL && text.length <= 1) {
+                    poslji(JSONObject().put("vrsta", "tipka").put("tipka", "vracalka")); true
+                } else false
+            }
+            findViewById<android.widget.FrameLayout>(R.id.koren).addView(this,
+                android.widget.FrameLayout.LayoutParams(1, 1))
+            sistemskoPolje = this
+        }
+        polje.requestFocus()
+        polje.setSelection(polje.text.length)
+        (getSystemService(INPUT_METHOD_SERVICE) as? android.view.inputmethod.InputMethodManager)
+            ?.showSoftInput(polje, android.view.inputmethod.InputMethodManager.SHOW_IMPLICIT)
+    }
+
+    private fun naDotik(): Boolean =
+        packageManager.hasSystemFeature(android.content.pm.PackageManager.FEATURE_TOUCHSCREEN) &&
+            (getSystemService(UI_MODE_SERVICE) as? android.app.UiModeManager)?.currentModeType !=
+            android.content.res.Configuration.UI_MODE_TYPE_TELEVISION
+
+    private var dotikX = 0f
+    private var dotikY = 0f
+    private var vlecemDotik = false
+    private var dolgiDotik = false
+    private var dvaPrsta = false
+    private var dvaPrstaY = 0f
+
+    /** Drzi prst: desni klik tam (kot na telefonu dolg pritisk odpre meni). */
+    private val dolgPritisk = Runnable {
+        if (!vlecemDotik && !dvaPrsta) {
+            dolgiDotik = true
+            posljiTocko(dotikX, dotikY)
+            poslji(ZaslonVnos.klik("desni"))
+        }
+    }
+
+    private fun posljiTocko(x: Float, y: Float) {
+        if (slikaW <= 0 || slikaH <= 0 || pogled.width <= 0 || pogled.height <= 0) return
+        val sx = (x / pogled.width * slikaW).toInt().coerceIn(0, slikaW - 1)
+        val sy = (y / pogled.height * slikaH).toInt().coerceIn(0, slikaH - 1)
+        poslji(JSONObject().put("vrsta", "tocka").put("x", sx).put("y", sy))
+    }
+
+    private fun gumbLevi(dol: Boolean) = poslji(JSONObject().put("vrsta", "gumb").put("gumb", "levi").put("dol", dol))
+
+    /**
+     * Dotik: kratek dotik je klik tam, kamor pokazes; vlecenje s prstom vlece (oznaci besedilo,
+     * premakne okno); drzanje je desni klik; dva prsta drsita vsebino gor in dol.
+     */
+    private fun dotik(e: MotionEvent): Boolean {
+        val gostota = resources.displayMetrics.density
+        when (e.actionMasked) {
+            MotionEvent.ACTION_DOWN -> {
+                dotikX = e.x; dotikY = e.y
+                vlecemDotik = false; dolgiDotik = false; dvaPrsta = false
+                glavna.postDelayed(dolgPritisk, 550)
+            }
+            MotionEvent.ACTION_POINTER_DOWN -> {
+                glavna.removeCallbacks(dolgPritisk)
+                if (vlecemDotik) { gumbLevi(false); vlecemDotik = false }
+                dvaPrsta = true
+                dvaPrstaY = if (e.pointerCount >= 2) (e.getY(0) + e.getY(1)) / 2 else e.y
+            }
+            MotionEvent.ACTION_MOVE -> {
+                if (dvaPrsta) {
+                    if (e.pointerCount >= 2) {
+                        val y = (e.getY(0) + e.getY(1)) / 2
+                        val d = y - dvaPrstaY
+                        val korak = 36 * gostota
+                        if (kotlin.math.abs(d) >= korak) {
+                            val n = (kotlin.math.abs(d) / korak).toInt()
+                            // Prsta gor = vsebina gor, kot na telefonu (kolesce navzdol).
+                            poslji(JSONObject().put("vrsta", "kolesce").put("smer", if (d < 0) "dol" else "gor").put("koliko", n))
+                            dvaPrstaY += (if (d < 0) -1 else 1) * n * korak
+                        }
+                    }
+                } else if (!dolgiDotik) {
+                    if (!vlecemDotik && kotlin.math.hypot(e.x - dotikX, e.y - dotikY) > 12 * gostota) {
+                        glavna.removeCallbacks(dolgPritisk)
+                        vlecemDotik = true
+                        posljiTocko(dotikX, dotikY)
+                        gumbLevi(true)
+                    }
+                    if (vlecemDotik) posljiTocko(e.x, e.y)
+                }
+            }
+            MotionEvent.ACTION_UP -> {
+                glavna.removeCallbacks(dolgPritisk)
+                if (vlecemDotik) {
+                    posljiTocko(e.x, e.y); gumbLevi(false); vlecemDotik = false
+                } else if (!dvaPrsta && !dolgiDotik) {
+                    posljiTocko(e.x, e.y)
+                    poslji(ZaslonVnos.klik("levi"))
+                }
+            }
+            MotionEvent.ACTION_CANCEL -> {
+                glavna.removeCallbacks(dolgPritisk)
+                if (vlecemDotik) { gumbLevi(false); vlecemDotik = false }
+            }
+        }
+        return true
+    }
+
+    private fun barva(koda: Int): String? = when (koda) {
+        KeyEvent.KEYCODE_PROG_RED -> "rdeca"
+        KeyEvent.KEYCODE_PROG_GREEN -> "zelena"
+        KeyEvent.KEYCODE_PROG_YELLOW -> "rumena"
+        KeyEvent.KEYCODE_PROG_BLUE -> "modra"
+        else -> null
+    }
+
+    /** Obvestilo racunalnika (na glavni niti). Stari racunalnik jih ne posilja - takrat nic. */
+    private fun obvestilo(o: JSONObject) {
+        if (isFinishing) return
+        if (o.has("izbira")) {
+            val a = o.optJSONArray("izbira")
+            if (a != null && a.length() == 4) pokaziOkvir(a.optInt(0), a.optInt(1), a.optInt(2), a.optInt(3))
+            else okvir.visibility = View.GONE
+        }
+        // Samo za daljinec: pri kontrolerju so v takem programu puscice puscice, ne miska.
+        if (o.optBoolean("brez_gumbov") && zadnjiFokusDaljinec && !brezGumbovPovedano) {
+            brezGumbovPovedano = true
+            pokaziNamigBesedilo(getString(R.string.os_zaslon_brez_gumbov), 3_500)
+        }
+        // Namig o barvnih tipkah samo, ce jih daljinec tega televizorja res ima.
+        if (o.optString("profil") == "brskalnik" &&
+            android.view.KeyCharacterMap.deviceHasKey(KeyEvent.KEYCODE_PROG_RED)) {
+            val nast = getSharedPreferences("safeer_os", MODE_PRIVATE)
+            if (!nast.getBoolean("profil_namig:brskalnik", false)) {
+                nast.edit().putBoolean("profil_namig:brskalnik", true).apply()
+                pokaziNamigBesedilo(getString(R.string.os_zaslon_profil_brskalnik), 6_000)
+            }
+        }
+        if (o.optBoolean("tipkovnica") && tipkovnica?.jeOdprta != true) odpriTipkovnico()
+        o.optJSONArray("kazalec")?.let { k -> if (povecava && k.length() == 2) premakniPovecavo(k.optInt(0), k.optInt(1)) }
+    }
+
+    private fun pokaziNamigBesedilo(besedilo: String, ms: Long) {
+        namig.text = besedilo
+        namig.visibility = View.VISIBLE
+        glavna.removeCallbacks(skrijNamig)
+        glavna.postDelayed(skrijNamig, ms)
+    }
+
+    /** Okvir okoli elementa (x, y, w, h v tockah drugega zaslona), poravnan s sliko in povecavo. */
+    private fun pokaziOkvir(x: Int, y: Int, w: Int, h: Int) {
+        if (slikaW <= 0 || slikaH <= 0 || trenW <= 0 || trenH <= 0) return
+        val sx = trenW.toFloat() / slikaW
+        val sy = trenH.toFloat() / slikaH
+        val rob = 5 * resources.displayMetrics.density
+        val lp = android.widget.FrameLayout.LayoutParams((w * sx + 2 * rob).toInt(), (h * sy + 2 * rob).toInt())
+        lp.gravity = android.view.Gravity.TOP or android.view.Gravity.START
+        lp.leftMargin = (trenL + x * sx - rob).toInt()
+        lp.topMargin = (trenT + y * sy - rob).toInt()
+        okvir.layoutParams = lp
+        okvir.visibility = View.VISIBLE
+    }
+
+    /** Vlecenje: levi gumb dol, nato kazalec premikas; OK (ali ponovno v meniju) spusti. */
+    private fun preklopiVlecenje() {
+        vlecem = !vlecem
+        poslji(JSONObject().put("vrsta", "gumb").put("gumb", "levi").put("dol", vlecem))
+        if (vlecem) pokaziNamigBesedilo(getString(R.string.os_zaslon_vlecem), 4_000)
+    }
+
+    /** Povecava 2x okoli kazalca. Racunalnik sporoca, kje je kazalec; sliko premaknemo sami. */
+    private fun preklopiPovecavo() {
+        povecava = !povecava
+        poslji(JSONObject().put("vrsta", "povecava").put("vkljuceno", povecava))
+        okvir.visibility = View.GONE
+        if (!povecava) uravnajRazmerje(slikaW, slikaH)
+    }
+
+    private fun premakniPovecavo(px: Int, py: Int) {
+        if (slikaW <= 0 || slikaH <= 0 || osnovaW <= 0) return
+        val w2 = osnovaW * 2
+        val h2 = osnovaH * 2
+        val l = (osnovaL + osnovaW / 2 - (px.toFloat() / slikaW * w2).toInt()).coerceIn(osnovaL + osnovaW - w2, osnovaL)
+        val t = (osnovaT + osnovaH / 2 - (py.toFloat() / slikaH * h2).toInt()).coerceIn(osnovaT + osnovaH - h2, osnovaT)
+        if (l == trenL && t == trenT && trenW == w2) return
+        val lp = android.widget.FrameLayout.LayoutParams(w2, h2)
+        lp.gravity = android.view.Gravity.TOP or android.view.Gravity.START
+        lp.leftMargin = l
+        lp.topMargin = t
+        pogled.layoutParams = lp
+        trenL = l; trenT = t; trenW = w2; trenH = h2
+    }
+
     private fun smernaTipka(ime: String, dol: Boolean, velja: Boolean) {
         if (!velja) return
-        odjemalec?.posljiVnos(org.json.JSONObject()
+        poslji(org.json.JSONObject()
             .put("vrsta", if (dol) "tipka_dol" else "tipka_gor").put("tipka", ime))
     }
 
@@ -678,7 +1015,7 @@ class ZaslonActivity : Activity(), LinkOdjemalec.Poslusalec {
             override fun run() {
                 val p = pomik
                 if (p == 0f || isFinishing || koncujem) { pomikTece = false; return }
-                odjemalec?.posljiVnos(org.json.JSONObject().put("vrsta", "kolesce")
+                poslji(org.json.JSONObject().put("vrsta", "kolesce")
                     .put("smer", if (p < 0) "gor" else "dol").put("koliko", 1))
                 // Bolj ko je palica odklonjena, hitreje se pomika.
                 glavna.postDelayed(this, (220 - 170 * kotlin.math.abs(p)).toLong().coerceAtLeast(40))
@@ -690,9 +1027,9 @@ class ZaslonActivity : Activity(), LinkOdjemalec.Poslusalec {
         val r2 = maxOf(e.getAxisValue(MotionEvent.AXIS_RTRIGGER), e.getAxisValue(MotionEvent.AXIS_GAS))
         val l2 = maxOf(e.getAxisValue(MotionEvent.AXIS_LTRIGGER), e.getAxisValue(MotionEvent.AXIS_BRAKE))
         // Histereza: klik ob pritisku cez 0.6, ponovno sele, ko je sprozilec spet pod 0.3.
-        if (!r2Pritisnjen && r2 > 0.6f) { r2Pritisnjen = true; odjemalec?.posljiVnos(ZaslonVnos.klik("levi")) }
+        if (!r2Pritisnjen && r2 > 0.6f) { r2Pritisnjen = true; poslji(ZaslonVnos.klik("levi")) }
         else if (r2Pritisnjen && r2 < 0.3f) r2Pritisnjen = false
-        if (!l2Pritisnjen && l2 > 0.6f) { l2Pritisnjen = true; odjemalec?.posljiVnos(ZaslonVnos.klik("desni")) }
+        if (!l2Pritisnjen && l2 > 0.6f) { l2Pritisnjen = true; poslji(ZaslonVnos.klik("desni")) }
         else if (l2Pritisnjen && l2 < 0.3f) l2Pritisnjen = false
     }
 
@@ -717,7 +1054,7 @@ class ZaslonActivity : Activity(), LinkOdjemalec.Poslusalec {
                 if (o == null || isFinishing || koncujem) { palicaTece = false; return }
                 ZaslonVnos.premik((o.first * ZaslonVnos.HITROST_PALICE).toInt(),
                                   (o.second * ZaslonVnos.HITROST_PALICE).toInt())
-                    ?.let { odjemalec?.posljiVnos(it) }
+                    ?.let { poslji(it) }
                 glavna.postDelayed(this, 16)
             }
         })

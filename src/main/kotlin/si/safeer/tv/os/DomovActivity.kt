@@ -146,6 +146,9 @@ class DomovActivity : OsActivity(), LinkOdjemalec.Poslusalec {
             imamoPrograme = programi; imamoZaslon = zaslon
             zZapomnjenimFokusom { narisiZacni() }
         }
+        // Ob vstopu Link navadno se ni povezan in vprasanje, kaj tece, ostane brez odgovora:
+        // vprasamo znova, ko se racunalnik javi.
+        if (programi) osveziTecejo(Nadaljuj.seznam(this).filter { jeProgram(it) })
     }
 
     override fun naNaslov(url: String, naslov: String, od: String) {
@@ -439,9 +442,9 @@ class DomovActivity : OsActivity(), LinkOdjemalec.Poslusalec {
             v.findViewById<TextView>(R.id.ime).text =
                 if (n.vrsta == Nadaljuj.ZASLON) getString(R.string.os_zaslon) else n.ime
             v.onFocusChangeListener = fokus
-            v.setOnClickListener { odpriNadaljuj(n) }
+            v.setOnClickListener { zadnjaOznaka = "nadaljuj:" + n.kljuc(); odpriNadaljuj(n) }
             v.setOnLongClickListener { moznostiNadaljuj(n); true }
-            if (jeProgram(n)) {
+            if (jeProgram(n) && tece(n)) {
                 // Program, zagnan s televizorja, tece na racunalniku: krizec to pove na prvi pogled,
                 // tipka X na plosku (ali drzan OK) ga zapre - kot v vsaki aplikaciji z zavihki.
                 dodajKrizec(ikona)
@@ -457,10 +460,23 @@ class DomovActivity : OsActivity(), LinkOdjemalec.Poslusalec {
         }
         // Zapri vse: ena tipka za vse programe, ki jih je televizor zagnal na racunalniku. Je v
         // naslovu vrste (desno), ne na koncu vrste - tam jo je rob zaslona odrezal na pol.
-        val programi = vnosi.filter { jeProgram(it) }
+        val vsiProgrami = vnosi.filter { jeProgram(it) }
+        val programi = vsiProgrami.filter { tece(it) }
+        osveziTecejo(vsiProgrami)
         gumbZapriVse.visibility = if (programi.isEmpty()) View.GONE else View.VISIBLE
         gumbZapriVse.text = "\u2715  " + getString(R.string.os_zapri_vse, programi.size)
         gumbZapriVse.setOnClickListener { zapriVse(programi) }
+        // Vrsto smo narisali na novo in izbrana kartica je izginila z njo: uporabnik, ki se vraca
+        // iz seje, bi sicer ostal brez izbire (prvi pritisk nekam, kamor ni hotel).
+        val f = currentFocus
+        val zadnja = zadnjaOznaka
+        if (zadnja != null && (f == null || !f.isAttachedToWindow || f.parent !== vrstaNadaljuj)) {
+            // Enkratno: le ob vrnitvi s kartice, ki jo je uporabnik odprl; kasneje fokusa ne jemljemo.
+            zadnjaOznaka = null
+            drsnik.postDelayed({
+                if (!isFinishing) (najdiPoOznaki(zadnja) ?: vrstaNadaljuj.getChildAt(0))?.requestFocus()
+            }, 60)
+        }
         // Desno od zadnje kartice ni nicesar vec: fokus ostane v vrsti in ne skoci v vrsto spodaj.
         if (vrstaNadaljuj.childCount > 0) {
             val zadnja = vrstaNadaljuj.getChildAt(vrstaNadaljuj.childCount - 1)
@@ -511,6 +527,52 @@ class DomovActivity : OsActivity(), LinkOdjemalec.Poslusalec {
 
     private fun jeProgram(n: Nadaljuj.Vnos) =
         n.vrsta == Nadaljuj.PROGRAM && n.program.isNotBlank() && n.racunalnik.isNotBlank()
+
+    /**
+     * Kateri programi res tecejo (kljuc vnosa). null = ne vemo (starejsi Control, racunalnik ni
+     * dosegljiv): takrat krizec kazemo pri vseh, kot prej. Program, ki ne tece vec, ostane v vrsti
+     * (z enim klikom ga znova odpres), le krizca in stetja v Zapri vse nima.
+     */
+    private var tecejo: Set<String>? = null
+    /** Kartica, ki jo je uporabnik nazadnje odprl: ob vrnitvi (konec seje) je izbira spet na njej. */
+    private var zadnjaOznaka: String? = null
+    private var sprasujem = false
+
+    private fun tece(n: Nadaljuj.Vnos) = tecejo?.contains(n.kljuc()) ?: true
+
+    private fun osveziTecejo(programi: List<Nadaljuj.Vnos>) {
+        if (sprasujem || programi.isEmpty()) return
+        val poRacunalnikih = programi.groupBy { it.racunalnik }
+        val zbrano = HashSet<String>()
+        var cakam = poRacunalnikih.size
+        var znano = true
+        sprasujem = true
+        for ((racunalnik, vnosi) in poRacunalnikih) {
+            val polje = org.json.JSONArray()
+            vnosi.forEach { polje.put(it.program) }
+            link.ukaz(racunalnik, "apps.running", org.json.JSONObject().put("apps", polje), 8_000,
+                LinkOdjemalec.Odgovor { izid, _ ->
+                    runOnUiThread {
+                        val podatki = izid?.optJSONObject("data")
+                        if (izid?.optBoolean("ok") == true && podatki != null) {
+                            val t = podatki.optJSONArray("running")
+                            val imena = HashSet<String>()
+                            if (t != null) for (i in 0 until t.length()) imena.add(t.optString(i))
+                            vnosi.filter { it.program in imena }.forEach { zbrano.add(it.kljuc()) }
+                        } else znano = false
+                        cakam--
+                        if (cakam == 0) {
+                            sprasujem = false
+                            val novo: Set<String>? = if (znano) zbrano else null
+                            if (novo != tecejo && !isFinishing) {
+                                tecejo = novo
+                                zZapomnjenimFokusom { narisiNadaljuj() }
+                            }
+                        }
+                    }
+                })
+        }
+    }
 
     /** Majhen krizec v kotu ikone: ta program tece na racunalniku in ga lahko zapres. */
     private fun dodajKrizec(ikona: ImageView) {
@@ -888,23 +950,71 @@ class DomovActivity : OsActivity(), LinkOdjemalec.Poslusalec {
             v.findViewById<ImageView>(R.id.ikona).setImageDrawable(Aplikacije.ikona(this, a))
             v.findViewById<TextView>(R.id.ime).text = a.ime
             v.onFocusChangeListener = fokus
-            v.setOnClickListener { odpriVarno(Intent(a.namera).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK), a.ime) }
+            v.setOnClickListener {
+                zadnjaOznaka = "app:" + a.paket
+                odpriVarno(Intent(a.namera).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK), a.ime)
+            }
             v.setOnLongClickListener { moznostiAplikacije(a, po.size); true }
             v.tag = "app:" + a.paket
             vrstaAplikacije.addView(v)
             if (a.paket == fokusPaket) zeljeni = v
         }
+        // Priljubljeni programi z racunalnika: v isti vrsti kot aplikacije televizorja - uporabnik
+        // ne loci, kje kaj tece. Ikono imamo shranjeno, zato je kartica tu tudi brez racunalnika.
+        val oddaljeni = SafeerAppi.priljubljeni(this).filter { it.vir == AppVir.RACUNALNIK }
+        for (p in oddaljeni) {
+            val v = LayoutInflater.from(this).inflate(R.layout.os_kartica_ikona, vrstaAplikacije, false)
+            val ikona = v.findViewById<ImageView>(R.id.ikona)
+            SafeerAppi.ikona(this, p)?.let { ikona.setImageDrawable(it) } ?: ikona.setImageResource(R.drawable.os_ikona_racunalnik)
+            v.findViewById<TextView>(R.id.ime).text = p.ime
+            v.onFocusChangeListener = fokus
+            v.setOnClickListener {
+                zadnjaOznaka = "app:" + p.kljuc
+                zazeniProgram(Nadaljuj.Vnos(vrsta = Nadaljuj.PROGRAM, ime = p.ime, racunalnik = p.racunalnik,
+                    program = p.cilj, igra = p.skupina == "igre"))
+            }
+            v.setOnLongClickListener {
+                android.app.AlertDialog.Builder(this, android.R.style.Theme_DeviceDefault_Dialog_Alert)
+                    .setTitle(p.ime)
+                    .setItems(arrayOf(getString(R.string.os_priljubljen_odstrani))) { _, _ ->
+                        val mesto = vrstaAplikacije.indexOfChild(v)
+                        SafeerAppi.odstrani(this, p.kljuc); narisiAplikacije()
+                        // Izbira ostane v vrsti (na sosednji kartici), ne skoci na vrh zaslona.
+                        vrstaAplikacije.post {
+                            vrstaAplikacije.getChildAt(mesto.coerceAtMost(vrstaAplikacije.childCount - 1))?.requestFocus()
+                        }
+                    }
+                    .setNegativeButton(getString(R.string.os_preklici), null)
+                    .let { Kontroler.pokazi(it.show()) }
+                true
+            }
+            v.tag = "app:" + p.kljuc
+            vrstaAplikacije.addView(v)
+        }
+        findViewById<TextView>(R.id.naslovAplikacije)?.setText(
+            if (oddaljeni.isEmpty()) R.string.os_odsek_aplikacije else R.string.os_odsek_priljubljene)
         val ostalo = LayoutInflater.from(this).inflate(R.layout.os_kartica_ikona, vrstaAplikacije, false)
         ostalo.findViewById<ImageView>(R.id.ikona).setImageResource(R.drawable.os_ikona_mreza)
         // Dokler uporabnik ni izbral nobene, kartica pove, kaj naj naredi - prazna vrsta molci.
         ostalo.findViewById<TextView>(R.id.ime).text =
-            getString(if (po.isEmpty()) R.string.os_aplikacije_izberi else R.string.os_aplikacije_ostalo)
+            getString(if (po.isEmpty() && oddaljeni.isEmpty()) R.string.os_aplikacije_izberi else R.string.os_vse_kartica)
         ostalo.onFocusChangeListener = fokus
-        ostalo.setOnClickListener { odpriVarno(Intent(this, AplikacijeTvActivity::class.java), getString(R.string.os_aplikacije_vse)) }
+        // Vse, kar lahko odpres: aplikacije televizorja, spletne in programi racunalnika na enem mestu.
+        ostalo.setOnClickListener { zadnjaOznaka = "app:+"; odpriVarno(Intent(this, AplikacijeHostaActivity::class.java)
+            .putExtra(AplikacijeHostaActivity.EXTRA_VIR, "vse"), getString(R.string.os_aplikacije_vse)) }
         ostalo.tag = "app:+"
         vrstaAplikacije.addView(ostalo)
         uravnajVrsto(vrstaAplikacije, NAJMANJSA_APP_DP, NAJVECJA_APP_DP)
         zeljeni?.let { it.post { it.requestFocus() } }
+        // Vrnitev iz aplikacije, odprte s te vrste: izbira je spet na njeni kartici.
+        val zadnja = zadnjaOznaka
+        if (zeljeni == null && zadnja != null && zadnja.startsWith("app:")) {
+            zadnjaOznaka = null
+            drsnik.postDelayed({
+                val f = currentFocus
+                if (!isFinishing && (f == null || !f.isAttachedToWindow)) najdiPoOznaki(zadnja)?.requestFocus()
+            }, 80)
+        }
     }
 
     /** Dolg pritisk na priljubljeno aplikacijo: uredi vrstni red ali jo umakni z domacega zaslona. */
@@ -915,6 +1025,9 @@ class DomovActivity : OsActivity(), LinkOdjemalec.Poslusalec {
         if (mesto in 0 until koliko - 1) dejanja.add(getString(R.string.os_spletne_desno) to { premakniAplikacijo(a, 1) })
         dejanja.add(getString(R.string.os_aplikacije_odstrani) to {
             Priljubljene.odstrani(this, a.paket); narisiAplikacije()
+            vrstaAplikacije.post {
+                vrstaAplikacije.getChildAt(mesto.coerceIn(0, vrstaAplikacije.childCount - 1))?.requestFocus()
+            }
         })
         android.app.AlertDialog.Builder(this, android.R.style.Theme_DeviceDefault_Dialog_Alert)
             .setTitle(a.ime)

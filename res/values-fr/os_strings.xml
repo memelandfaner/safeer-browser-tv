@@ -343,4 +343,24 @@
     <string name="os_zaslon_naslednji">Programme suivant</string>
     <string name="os_zaslon_meni_plosek_igra">Manette comme manette de jeu</string>
     <string name="os_zaslon_meni_plosek_namizje">Manette comme clavier et souris</string>
+    <string name="os_zaslon_brez_gumbov">Ce programme n\'indique pas où sont ses boutons – les flèches déplacent la souris</string>
+    <string name="os_zaslon_profil_brskalnik">Navigateur · rouge retour · vert suivant · jaune actualiser · bleu nouvel onglet</string>
+    <string name="os_zaslon_meni_vleci">Glisser</string>
+    <string name="os_zaslon_meni_spusti">Déposer</string>
+    <string name="os_zaslon_meni_povecava">Zoom</string>
+    <string name="os_zaslon_meni_povecava_izklopi">Désactiver le zoom</string>
+    <string name="os_zaslon_vlecem">Glissement – déplacez le pointeur et appuyez sur OK pour déposer</string>
+    <string name="os_seznanitev_naslov">Nouvel appareil</string>
+    <string name="os_seznanitev_opis">%1$s veut rejoindre Safeer Link sur ce téléviseur. Saisissez ce code sur l\'appareil :</string>
+    <string name="os_seznanitev_zavrni">Refuser</string>
+    <string name="os_vse_nadnaslov">Applications</string>
+    <string name="os_vse_naslov">Tout ce que vous pouvez ouvrir</string>
+    <string name="os_vir_vse">Tout</string>
+    <string name="os_vir_tv">Téléviseur</string>
+    <string name="os_vir_splet">Web</string>
+    <string name="os_vir_racunalnik">Ordinateur</string>
+    <string name="os_priljubljen_dodaj">Ajouter à l\'écran d\'accueil</string>
+    <string name="os_priljubljen_odstrani">Retirer de l\'écran d\'accueil</string>
+    <string name="os_odsek_priljubljene">Applications favorites</string>
+    <string name="os_vse_kartica">Toutes les applis</string>
 </resources>
